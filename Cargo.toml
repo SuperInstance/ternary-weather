@@ -1,4 +1,6 @@
 [package]
+description = "ternary-weather - SuperInstance ecosystem crate"
+repository = "https://github.com/SuperInstance/ternary-weather"
 name = "ternary-weather"
 version = "0.1.0"
 edition = "2024"
