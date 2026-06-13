@@ -1,199 +1,99 @@
-# ternary-weather
+# ternary-weather: Environmental conditions and their effects on agents
 
-**Ternary weather simulation: weather phenomena modeled with ternary states {-1, 0, +1}.**
+Models load storms, network weather, resource climate, and other environmental phenomena that affect how agents behave in fleet rooms.
 
-[![Tests](https://img.shields.io/badge/tests-27%20passing-brightgreen)]()
+## Why This Exists
 
-## Why?
+Fleet rooms don't operate in isolation — they have conditions. Load spikes are storms. Network latency is weather. Long-term averages are climate. Agents need to sense these conditions, predict them, and take shelter when things get bad. This crate provides the vocabulary for that: current conditions, forecasts, storms, climate patterns, change detection, and shelter strategies.
 
-Weather is something *everyone* understands — hot, cold, calm, stormy. By mapping
-these intuitions to ternary mathematics ({-1, 0, +1}), we make abstract ternary
-operations tangible and intuitive.
+## Core Concepts
 
-When a student sees cold air meeting hot air, they're watching ternary diffusion.
-When pressure gradients create wind, they're seeing ternary convergence. When
-conditions align and a storm forms, they're witnessing ternary pattern emergence.
-
-This crate is part of **Loom** — making agent coordination concepts accessible
-through weather, the most universally understood complex system.
-
-## Core Model
-
-### WeatherCell
-
-Each cell in the simulation has three ternary properties:
-
-| Property     | -1        | 0         | +1        |
-|-------------|-----------|-----------|-----------|
-| Temperature | Cold ❄    | Neutral ━ | Hot ☀     |
-| Pressure    | Low ▽     | Normal ─  | High △    |
-| Wind        | Left ←    | None ·    | Right →   |
-
-```rust
-use ternary_weather::{WeatherCell, Temperature, Pressure, Wind};
-
-let cell = WeatherCell::new(Temperature::Hot, Pressure::Low, Wind::Right);
-assert!(cell.is_stormy()); // Hot + Low pressure + Wind = Storm!
-```
-
-### WeatherGrid
-
-A 2D grid of weather cells with spatial simulation:
-
-```rust
-use ternary_weather::WeatherGrid;
-
-let mut grid = WeatherGrid::new(10, 10);
-grid.set(3, 3, WeatherCell::new(Temperature::Hot, Pressure::High, Wind::Right));
-
-// Run simulation
-let next = grid.step();
-let forecast = grid.forecast(24); // 24-step forecast
-```
-
-## Simulation Dynamics
-
-### Heat Diffusion (Ternary Trit Propagation)
-
-Temperature spreads through ternary neighborhood interaction:
-- A cold cell surrounded by 2+ hot neighbors warms to neutral
-- A hot cell surrounded by 2+ cold neighbors cools to neutral
-- A neutral cell with 3+ extreme neighbors shifts toward the majority
-
-This mirrors real heat diffusion — thermal equilibrium through ternary averaging.
-
-### Pressure Systems (Convergence & Divergence)
-
-Pressure evolves based on neighborhood dynamics:
-- Normal pressure with 2+ low neighbors → drops to Low (convergence zone)
-- Normal pressure with 2+ high neighbors → rises to High (divergence zone)
-- Low pressure surrounded by low neighbors → deepens (stays Low)
-- High pressure surrounded by high neighbors → strengthens (stays High)
-
-### Wind Generation
-
-Wind is determined by **pressure gradients**:
-- Higher pressure to the right → wind blows Left (toward low)
-- Higher pressure to the left → wind blows Right (toward low)
-- Equal pressure → no wind
-
-This is a ternary version of the real atmospheric rule: wind flows from
-high to low pressure.
-
-### Storm Formation
-
-A storm forms when all three conditions align:
-1. **Extreme temperature** (Hot or Cold — not Neutral)
-2. **Low pressure**
-3. **Wind present** (Left or Right — not None)
-
-```rust
-let storms = grid.find_storms();
-for (x, y) in storms {
-    println!("Storm at ({}, {})!", x, y);
-}
-```
+- **Weather**: The current environmental state of a room — a collection of named conditions with severity levels.
+- **Severity**: Five levels from Calm to Critical. Conditions at Severe or above are "dangerous."
+- **Forecast**: A sequence of predicted future weather states, keyed by time offset.
+- **Storm**: An adverse event with a start time, duration, affected locations, and severity.
+- **Climate**: Long-term averages and storm frequency for a region. Detects anomalies (values far from average).
+- **WeatherVane**: Tracks condition changes over time and flags significant shifts (above a threshold).
+- **StormShelter**: Named refuges with capacity limits and lists of conditions they protect against.
 
 ## Quick Start
+
+```toml
+[dependencies]
+ternary-weather = "0.1"
+```
 
 ```rust
 use ternary_weather::*;
 
-// Create a weather system
-let mut grid = WeatherGrid::new(8, 8);
+let mut weather = Weather::new("engine-room", 100);
+weather.set_condition(Condition::new("latency", 250.0, Severity::Severe));
+weather.set_condition(Condition::new("packet_loss", 0.05, Severity::Mild));
 
-// Set up a cold front on the left
-for y in 0..8 {
-    grid.set(0, y, WeatherCell::new(Temperature::Cold, Pressure::High, Wind::Right));
-    grid.set(1, y, WeatherCell::new(Temperature::Cold, Pressure::Normal, Wind::Right));
-}
+assert!(!weather.is_safe()); // Severe latency makes it unsafe
 
-// Set up warm air on the right
-for y in 0..8 {
-    grid.set(6, y, WeatherCell::new(Temperature::Hot, Pressure::Low, Wind::Left));
-    grid.set(7, y, WeatherCell::new(Temperature::Hot, Pressure::Low, Wind::Left));
-}
-
-// Simulate the collision
-let forecast = grid.forecast(10);
-for (step, state) in forecast.iter().enumerate() {
-    println!("=== Hour {} ===", step + 1);
-    println!("{}", state.render_temperature());
-    let stats = state.statistics();
-    println!("Storms: {}, Imbalance: {:.2}", 
-        stats.storms, stats.temperature_imbalance());
-}
+let mut storm = Storm::new("load-spike", Severity::Critical, 100, 50);
+storm.affect("engine-room");
+assert!(storm.is_active_at(130));
+assert!(!storm.is_active_at(200));
 ```
-
-## Features
-
-### Forecasting
-Run N steps ahead and examine the full trajectory:
-```rust
-let forecast = grid.forecast(48); // 48-step forecast
-```
-
-### Storm Detection
-Find all cells where storm conditions have aligned:
-```rust
-let storms = grid.find_storms();
-```
-
-### Statistics
-Comprehensive population statistics:
-```rust
-let stats = grid.statistics();
-println!("Cold: {}  Neutral: {}  Hot: {}", stats.cold, stats.neutral, stats.hot);
-println!("Storm ratio: {:.1}%", stats.storm_ratio() * 100.0);
-println!("Temperature imbalance: {:.3}", stats.temperature_imbalance());
-```
-
-### Rendering
-Multiple visualization modes:
-```rust
-println!("{}", grid.render_temperature()); // ❄━☀ view
-println!("{}", grid.render_wind());        // ←·→ view  
-println!("{}", grid.render());             // Full cell info: ☀△→
-```
-
-### Boundary Handling
-The grid uses **toroidal wrapping** — cells on the edge connect to the opposite
-edge, simulating a closed weather system with no boundaries.
-
-## Educational Value
-
-Designed for **Loom** — making agent coordination accessible:
-
-1. **Ternary arithmetic** → Temperature addition, negation
-2. **Spatial propagation** → Heat diffusion as ternary neighborhood rules
-3. **Gradient dynamics** → Pressure creating wind (ternary convergence)
-4. **Emergent phenomena** → Storms from ternary condition alignment
-5. **System stability** → Neutral grids stay neutral (equilibrium)
-6. **Forecasting** → Predicting N steps ahead (ternary trajectory)
-
-## The Ternary Weather Philosophy
-
-| Real Weather     | Ternary Model                    |
-|-----------------|----------------------------------|
-| Temperature      | Trit: Cold/Neutral/Hot           |
-| Pressure systems | Trit: Low/Normal/High            |
-| Wind direction   | Trit: Left/None/Right            |
-| Heat transfer    | Ternary diffusion rules          |
-| Fronts           | Pressure convergence zones       |
-| Storms           | Aligned ternary conditions       |
-| Forecast         | Iterated ternary step function   |
 
 ## API Overview
 
-| Type          | Description                              |
-|---------------|------------------------------------------|
-| `Temperature` | Cold, Neutral, Hot                       |
-| `Pressure`    | Low, Normal, High                        |
-| `Wind`        | Left, None, Right                        |
-| `WeatherCell` | Single cell with temp/pressure/wind      |
-| `WeatherGrid` | 2D spatial simulation grid               |
-| `WeatherStats`| Population counts, ratios, imbalances    |
+| Type | Description |
+|------|-------------|
+| `Weather` | Current conditions for a room, with overall severity computation |
+| `Condition` | A single measurable condition (name, value, severity) |
+| `Severity` | Five-level scale: Calm, Mild, Moderate, Severe, Critical |
+| `Forecast` | Ordered predictions of future weather states |
+| `Storm` | An adverse event spanning locations with a time window |
+| `Climate` | Long-term averages and anomaly detection for a region |
+| `WeatherVane` | Detects significant changes between readings |
+| `StormShelter` | Named refuges with capacity and condition-specific protection |
+
+## How It Works
+
+`Weather` is a simple `HashMap<String, Condition>`. Overall severity is the maximum of all individual condition severities. An empty weather report is Calm (no conditions = no danger).
+
+`Forecast` stores predictions as a `Vec` of (offset, Weather) pairs. Lookups are linear scan — fine for short forecasts. The `nearest_to` method finds the closest prediction to any requested time.
+
+`Storm` uses a simple time window: active from `started_at` to `started_at + duration`. Progress is a linear 0.0→1.0 ramp. No bell curves or gradual onset/offset modeling.
+
+`Climate` tracks averages and flags anomalies as values more than 2x or less than 0.5x the average. This is intentionally crude — for proper statistical anomaly detection, use `ternary-entropy` or similar.
+
+`StormShelter` is a capacity-managed registry. Shelters have named lists of conditions they protect against — a shelter that blocks "load" doesn't help against "latency" storms.
+
+## Known Limitations
+
+- **No interpolation**: Forecasts are discrete time points. Between predictions, there's no gradual transition.
+- **Linear storm model**: Storms are full-on during their window and gone after. No gradual ramp-up or cool-down.
+- **Crude anomaly detection**: 2x threshold is arbitrary. Real anomaly detection needs distribution awareness.
+- **No geographic propagation**: Storms affect explicitly listed locations. There's no spatial spread model.
+- **Single-dimension shelter**: A shelter either blocks a condition or doesn't. No partial protection.
+
+## Use Cases
+
+- **Load shedding**: When weather reports Severe load, agents throttle non-critical work.
+- **Predictive caching**: Forecasts let agents pre-cache data before a predicted storm.
+- **Capacity planning**: Climate data shows which rooms historically have the most storms.
+- **Alert routing**: WeatherVane detects sudden changes and triggers operator notifications.
+- **Evacuation**: StormShelter tracks where agents can retreat during critical events.
+
+## Ecosystem Context
+
+Part of the SuperInstance ternary fleet. Related crates:
+- `ternary-room`: Rooms that weather applies to.
+- `ternary-sensor`: Raw sensor data that feeds into weather conditions.
+- `ternary-observatory`: Broader fleet-wide monitoring that includes weather data.
 
 ## License
 
 MIT
+
+## See Also
+- **ternary-observatory** — related
+- **ternary-predict** — related
+- **ternary-sensor** — related
+- **ternary-dynamics** — related
+- **ternary-beacon** — related
+

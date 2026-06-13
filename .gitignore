@@ -1,4 +1,3 @@
 /target
-.env
-credentials.*
-*.secret
+target/
+Cargo.lock
